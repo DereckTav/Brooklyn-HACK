@@ -152,6 +152,8 @@ class GameState:
     milestones: MilestoneTracker       # Track unlock conditions
     announcements: list[Announcement]  # Bluff/signal history
     is_paused: bool                    # Pause state for save/resume
+    ap_this_turn: int                  # Result of dice roll (set at start of player phase)
+    property_expiry: dict[str, int]    # property_id → turn it expires (listed + N turns)
 ```
 
 ---
@@ -172,7 +174,13 @@ Start of Turn
   ├── Bluff Phase (optional, free — no AP cost)
   │     └── Player may make one public announcement
   │
-  ├── Player Phase (3 AP)
+  ├── Player Phase
+  │     ├── ★ Roll AP dice (1d4+1, floor 2) → push result to client
+  │     ├── If roll = 2 (LOW ROLL):
+  │     │     ├── Fire penalty trivia question automatically (same engine as Research)
+  │     │     ├── Correct answer → proceed with 2 AP, no cash loss
+  │     │     └── Wrong answer → deduct $4,000 cash, then proceed with 2 AP
+  │     ├── One action button greyed out on any 2-AP turn (regardless of trivia result)
   │     ├── Player submits actions via API
   │     ├── Validate AP budget + cash
   │     └── Execute each action through Action Processor
@@ -185,7 +193,10 @@ Start of Turn
   ├── Resolution Phase
   │     ├── Apply all state changes atomically
   │     ├── *** Collect rent for all property owners ***
+  │     ├── Expire any listings that have hit their expiry turn → remove from board
+  │     ├── Update Flipper interest flags (eyes icon) for next turn's tiles
   │     ├── Check debt/LTV → bankruptcy warning or forced liquidation
+  │     ├── Check cash danger threshold → set danger_mode flag for client
   │     ├── Check milestone conditions → unlock finance tools
   │     ├── Check net worth victory (if turn ≥ 10)
   │     └── Advance turn counter
@@ -197,21 +208,26 @@ Start of Turn
 
 ### 3. Property Listing Manager (`game_engine/listings.py`)
 
-Controls property availability via a drip-feed schedule.
+Controls property availability via a drip-feed schedule. The board always shows all 10 tile slots — unlocked ones show the property, locked ones show a "???" tile. Players can see how many slots remain but not what's coming.
 
-**Schedule:**
-- **Turn 1:** 3 properties available (1 budget, 1 mid-range, 1 budget)
-- **Turn 3:** +1 new listing (mid-range)
-- **Turn 5:** +1 new listing (budget)
-- **Turn 7:** +1 new listing (mid-range)
-- **Turn 9:** +1 new listing (premium)
-- **Turn 12:** +1 new listing (mid-range)
-- **Turn 15:** +1 new listing (premium)
-- **Turn 18:** +1 new listing (budget — last listing)
+**Unlock schedule:**
 
-**Total: 10 properties revealed over 18 turns.**
+| Turn | Unlocks | Total Listed | Tier |
+|---|---|---|---|
+| 1 | 3 | 3 | budget, mid, budget |
+| 3 | +1 | 4 | mid |
+| 5 | +1 | 5 | budget |
+| 7 | +1 | 6 | mid |
+| 9 | +1 | 7 | **premium** (first) |
+| 12 | +1 | 8 | mid |
+| 15 | +1 | 9 | **premium** |
+| 18 | +1 | 10 | budget (last) |
 
-This creates strategic timing decisions: do you buy what's available now, or save cash anticipating a premium listing later? Players with good intel (from research) can time purchases around both catalysts AND new listings.
+**Property expiry:** Each listing has a 3-turn expiry timer starting when it unlocks. If nobody buys it (player or Flipper) within 3 turns, the tile relocks as "???" and the property is gone for the rest of the game.
+
+Each unlock fires a `new_listing` WebSocket event with a tile-reveal animation on the client. The unlock is a moment — not a silent state update.
+
+Starting cash of $22K means turn-1 budget properties ($12–15K) are reachable; the turn-1 mid-range ($28K) is not — players have to earn their way to it.
 
 ---
 
@@ -237,13 +253,15 @@ Cost = $1,500 + (15% × property_value)
 
 | Property Value | Dev Cost | Dev as % of Value |
 |---|---|---|
-| $12,000 | $3,300 | 27.5% |
-| $25,000 | $5,250 | 21.0% |
-| $40,000 | $7,500 | 18.8% |
-| $60,000 | $10,500 | 17.5% |
-| $75,000 | $12,750 | 17.0% |
+| $6,000 | $1,400 | 23.3% |
+| $9,000 | $1,850 | 20.6% |
+| $14,000 | $2,600 | 18.6% |
+| $28,000 | $4,700 | 16.8% |
+| $38,000 | $6,200 | 16.3% |
 
-> **Design note:** The flat fee makes cheap properties relatively more expensive to develop (27.5% vs 17%). This is intentional — premium properties offer better economies of scale, but require more upfront capital. This creates a genuine strategic tradeoff between "many cheap properties" vs "few expensive ones."
+> **Design note:** The flat fee makes cheap properties relatively more expensive to develop (23% vs 16%). Budget properties are accessible to buy but cost more proportionally to upgrade — premium properties have better development economics but require saving up. This is the core strategic tradeoff.
+
+> **Verification:** With $22K starting cash, a $1,400 development cost (on the cheapest property) is 6.4% of starting cash — painful but not catastrophic. At $4,000 penalty (old value) it was an 18% hit. At $1,000 (new value) it's 4.5%.
 
 ---
 
@@ -604,7 +622,8 @@ Dismissed individually. Never shown again after first game.
     ├── <GameProvider>           ← Zustand store for game state
     │   │
     │   ├── ── HEADER ──
-    │   ├── <TopBar>             ← Turn X/20, AP bubbles (●●●), cash, pause button
+    │   ├── <TopBar>             ← Turn X/20, pause button
+    │   │   └── <APDiceRoll>     ← Dice animation + AP result display (●●●○○)
     │   │
     │   ├── ── GAME BOARD (center, dominant) ──
     │   ├── <DistrictBoard>      ← Pixel art property grid (main game board)
@@ -628,6 +647,21 @@ Dismissed individually. Never shown again after first game.
     │       ├── <PauseMenu>      ← Save / Resume / Quit
     │       └── <GameOverScreen> ← Final score, finance reveals, replay option
 ```
+
+### Tension Systems
+
+Each tension mechanic lives in a specific component. They are independent and stack — multiple can be active simultaneously.
+
+| Mechanic | Component | Trigger | Visual |
+|---|---|---|---|
+| **Dice roll** | `APDiceRoll.tsx` | Start of every player phase | Animated pixel dice tumble → big number reveal |
+| **Low-roll crisis** | `ActionPanel.tsx` | Roll = 2 AP | One button greyed + "can't this turn" label |
+| **Property expiry** | `PropertyTile.tsx` | Listing age ≥ 1 turn | Countdown badge: 3 → 2 → 1 → tile fades out |
+| **Flipper eyes** | `PropertyTile.tsx` | Flipper has flagged the tile | 👀 icon overlay on tile |
+| **Catalyst dread** | `PropertyTile.tsx` / `DistrictBoard.tsx` | Heat indicator fills | Thermometer animation; no boom/bust label until it fires |
+| **Cash danger mode** | `PlayerCard.tsx` | Cash < 1× rent/turn | UI border pulses red |
+
+All six are active from turn 1 of MVP v1.
 
 ### Player Identity
 
@@ -734,21 +768,42 @@ All game balance values live in a single tunable config. These have been **stres
 # ============================================================
 
 # --- STARTING CONDITIONS ---
-STARTING_CASH = 75_000          # Player starts with $75K
+STARTING_CASH = 22_000          # Player starts with $22K — tight by design (see plan.md)
 TURNS = 20                       # Fixed turn count
-AP_PER_TURN = 3                  # Action points per turn
+
+# --- VICTORY ---
+NET_WORTH_VICTORY = 100_000      # Early victory threshold (down from $500K — see stress test)
+NET_WORTH_VICTORY_MIN_TURN = 10
+MIN_PROPERTIES_FOR_VICTORY = 3
+
+# --- ACTION POINTS (dice roll each turn) ---
+AP_DICE_SIDES = 4                # Roll 1d4
+AP_DICE_BONUS = 1                # +1 added to roll result
+AP_MIN = 2                       # Floor: guaranteed minimum (never below 2)
+AP_MAX = 5                       # Ceiling: 1d4+1 max
+LOW_ROLL_THRESHOLD = 2           # Rolls at or below this trigger penalty trivia
+LOW_ROLL_PENALTY = 1_000         # Wrong answer on penalty trivia costs $1,000
+
+# --- TENSION MECHANICS ---
+PROPERTY_EXPIRY_TURNS = 5        # Listed property vanishes after N turns unsold
+FLIPPER_EYES_TURNS_BEFORE = 2    # Easy: eyes appear 2 turns before Flipper acts
+FLIPPER_EYES_TURNS_BEFORE_HARD = 1  # Hard: only 1 turn warning
+CASH_DANGER_THRESHOLD = 1.0      # Danger mode when cash < 1× current rent/turn
+HEAT_INDICATOR_ENABLED = True
+HEAT_INDICATOR_TURNS_BEFORE = 2  # Heat fills this many turns before catalyst fires
+# Direction (boom/bust) is hidden until catalyst triggers — Research reveals it
 
 # --- VICTORY CONDITIONS ---
-NET_WORTH_VICTORY = 500_000      # Early victory threshold
+NET_WORTH_VICTORY = 100_000      # Early victory threshold (stress-tested, see balance section)
 NET_WORTH_VICTORY_MIN_TURN = 10  # Can't win by net worth before turn 10
 MIN_PROPERTIES_FOR_VICTORY = 3   # Must own ≥3 to claim net worth victory
 
 # --- PROPERTIES ---
 PROPERTY_COUNT = 10
 PROPERTY_TIERS = {
-    "budget":  {"count": 4, "price_range": (10_000, 22_000)},
-    "mid":     {"count": 4, "price_range": (25_000, 45_000)},
-    "premium": {"count": 2, "price_range": (55_000, 75_000)},
+    "budget":  {"count": 4, "price_range": (5_000, 9_000)},
+    "mid":     {"count": 4, "price_range": (10_000, 18_000)},
+    "premium": {"count": 2, "price_range": (25_000, 38_000)},
 }
 
 # Market value multiplier per development level (used for net worth calc)
@@ -772,7 +827,7 @@ LISTING_SCHEDULE = [
 ]
 
 # --- RENT ---
-BASE_RENT_YIELD = 0.08           # 8% of property value per turn
+BASE_RENT_YIELD = 0.12           # 12% of property value per turn
 
 # Rent multipliers by development level
 RENT_MULTIPLIERS = {
@@ -784,7 +839,7 @@ RENT_MULTIPLIERS = {
 MAX_DEVELOPMENT_LEVEL = 3
 
 # --- DEVELOPMENT COSTS ---
-DEV_FLAT_FEE = 1_500             # Fixed fee per upgrade
+DEV_FLAT_FEE = 500               # Fixed fee per upgrade (scaled down with property prices)
 DEV_PERCENT_FEE = 0.15           # + 15% of current property value
 
 # --- MORTGAGE (Tier 2, unlocks at turn 10) ---
@@ -827,34 +882,46 @@ TRIVIA_FALLBACK_FILE = "questions_fallback.json"  # Offline fallback
 
 ### Balance Verification (20-Turn Simulation)
 
-**Optimal player (skilled, no bad luck):**
+**Stress-tested simulation (optimal player, $22K start, 12% yield, scaled prices):**
 
-| Phase | Turns | Cash | Portfolio | Rent/Turn | Net Worth |
+Turn 1 listings: Budget A ($6K), Budget B ($8K), Mid C ($13K)
+
+| Turn | Event | Cash | Portfolio | Rent/Turn | Net Worth |
 |---|---|---|---|---|---|
-| Early | 1–5 | ~$25K | ~$70K | ~$6K | ~$95K |
-| Mid | 6–10 | ~$40K | ~$160K | ~$14K | ~$200K |
-| Leverage | 11–15 | ~$60K | ~$280K | ~$24K | ~$340K* |
-| Late | 16–20 | ~$80K | ~$420K | ~$35K | ~$500K |
+| 1 | Buy Budget A+B ($14K total) | $8,000 | $14K | $1,680 | $22,000 |
+| 3 | Buy Mid C ($13K) — just affordable | $1,680 | $27K | $3,240 | $28,680 |
+| 5 | New budget unlocks, buy it ($7K) | $1,400 | $34K | $4,080 | $35,400 |
+| 9 | First premium unlocks ($30K) | $18,000 | $34K | $4,080 | $52,000 |
+| 10 | Mortgage opens. Borrow $23K, buy premium | $11,000 | $64K | $7,680 | $52,000* |
+| 15 | Compounding rent + mortgage interest net | $35,000 | $64K | $5,700 net | $76,000 |
+| 20 | End game | $57,000 | $64K | $5,700 net | **$98,000** |
 
-*\*Net worth = cash + portfolio − debt. Mortgage debt ~$100K in this scenario.*
+*\*Net worth dips when mortgage taken — debt offsets portfolio. Recovers as rent pays down.*
 
 **Key checkpoints:**
-- ✅ Turn 5: Player can afford 2-3 properties. Cash is tight but manageable.
-- ✅ Turn 10: Mortgage opens exactly when players need capital for growth.
-- ✅ Turn 15: Well-played game is on track for $500K net worth victory.
-- ✅ Turn 20: Average player hits $300-400K. Skilled player hits $500K+.
+- ✅ Turn 1: Buy 2 budget properties, tight but possible. $8K left.
+- ✅ Turn 3: First mid-range affordable. Meaningful progression by turn 3.
+- ✅ Turn 9: Premium arrives. Player is saving/planning around it.
+- ✅ Turn 10: Mortgage enables premium purchase — leverage feels rewarding.
+- ✅ Turn 15–20: Net worth climbs toward $100K victory condition. Achievable for skilled play.
+- ✅ Victory condition ($100K) is achievable but not guaranteed — average play ends ~$70-80K.
 
 **Bankruptcy scenario:**
-- Player borrows max at turn 10 (70% LTV on $160K portfolio = $112K debt)
-- Downturn catalyst: portfolio drops 30% → portfolio = $112K
-- LTV = $112K / $112K = 100% → **Bankruptcy. Game over.**
-- ✅ This teaches over-leverage risk through experience, not lecture.
+- Player borrows max at turn 10 (70% LTV on $64K portfolio = $44.8K debt)
+- Downturn catalyst: portfolio drops 30% → portfolio = $44.8K
+- LTV = $44.8K / $44.8K = 100% → **Bankruptcy. Game over.**
+- ✅ Teaches over-leverage risk through experience, not lecture.
 
 **Flipper AI economy:**
-- Buys budget properties ($12–20K), sells at 10%+ profit
-- ~6–8 flips over 20 turns → $10–40K profit, no development income
-- Flipper net worth at turn 20: ~$100–150K (clearly worse than buy-and-hold)
+- Buys budget properties ($5–9K), sells at 10%+ profit → ~$500–900 per flip
+- ~6–8 flips over 20 turns → $3,000–7,200 profit, no development income
+- Flipper net worth at turn 20: ~$30–45K (clearly worse than buy-and-hold at ~$80–100K)
 - ✅ Teaches that flipping underperforms long-term ownership.
+
+**Low-roll penalty scenario:**
+- Turn 2: Player has $10,000 after buying budget A. Rolls 2 → wrong answer → lose $1,000
+- Cash drops to $9,000. Still functional. ✅ Painful but not fatal.
+- Old penalty ($4,000) would have left $6,000 → spiraling crisis. ✗
 
 ### Welcome Bonus Analysis — NOT NEEDED
 
@@ -1052,7 +1119,8 @@ mogul-blocks/
 │   │   │   ├── TutorialScreen.tsx   # Scripted 3-turn walkthrough
 │   │   │   └── GameScreen.tsx       # Main game shell
 │   │   ├── components/
-│   │   │   ├── TopBar.tsx           # Turn counter, AP bubbles, pause
+│   │   │   ├── TopBar.tsx           # Turn counter, pause button
+│   │   │   ├── APDiceRoll.tsx       # ★ Dice animation + AP result (new each turn)
 │   │   │   ├── DistrictBoard.tsx
 │   │   │   ├── PropertyTile.tsx     # Pixel art sprite + heat indicator + owner badge
 │   │   │   ├── ActionPanel.tsx      # BUY / DEVELOP / RESEARCH buttons
@@ -1099,17 +1167,17 @@ Build and test one feature at a time in this sequence. Each step is playable bef
 | Step | Feature | What You Can Test |
 |---|---|---|
 | 1 | **Launch Page** | Play / Tutorial / Continue buttons render and route correctly |
-| 2 | **Game Board shell** | Empty district board with 10 property tiles, PlayerCard (YOU), RivalCard (FLIPPER), TopBar |
-| 3 | **Buy action** | Click a listed property → it gets owned by YOU, cash deducted, tile updates |
-| 4 | **End Turn + Rent** | End Turn button triggers rent collection, turn counter advances, AI takes a buy action |
-| 5 | **Develop action** | Select owned property → pay cost → sprite upgrades, rent yield increases |
-| 6 | **Research + Trivia** | Research button → trivia modal → correct/wrong answer → intel shown in feed |
-| 7 | **Bluff panel** | Chat input available before AP spending, Flipper reacts to your message |
-| 8 | **Auction** | When both YOU and Flipper want same property → bid modal fires |
+| 2 | **Game Board shell + Dice** | Empty board, PlayerCard, RivalCard, TopBar + APDiceRoll animation fires each turn |
+| 3 | **Buy action + Tension layer 1** | Buy a property; property tiles show expiry countdown and Flipper 👀 icon |
+| 4 | **End Turn + Rent + Tension layer 2** | Rent collected; cash danger mode pulses red when low; Flipper buys something |
+| 5 | **Research + Trivia + Tension layer 3** | Trivia modal works; intel appears in feed; heat indicator animates pre-catalyst |
+| 6 | **Trash Talk** | Chat input works; Flipper reacts to your message next turn |
+| 7 | **Auction** | Both YOU and Flipper want same property → bid modal fires |
+| 8 | **Develop action** | *(v2)* Select owned property → pay cost → tile upgrades, rent yield increases |
 | 9 | **Tutorial flow** | Scripted 3-turn walkthrough using real game components |
 | 10 | **Game Over + Score** | Victory / bankruptcy screen with final net worth breakdown |
 
-Do not start Step N+1 until Step N is fully working end-to-end.
+Do not start Step N+1 until Step N is fully working end-to-end. Steps 1–7 = MVP v1. Step 8 = MVP v2.
 
 ---
 
