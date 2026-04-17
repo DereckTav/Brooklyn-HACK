@@ -655,13 +655,13 @@ Before spending any AP each turn, you can taunt, bluff, or call out your rival. 
 │ FLIPPER  *bought LAN House* │
 │─────────────────────────────│
 │ [Say something...]     [↵]  │
-│  (free · once per turn)     │
+│  free   │
 └─────────────────────────────┘
 ```
 
 - Your taunts/bluffs appear right-aligned (blue)
 - Flipper's actions and reactions appear left-aligned (orange)
-- Input only unlocks at the **start** of your turn, before you spend AP. Greyed out otherwise.
+- Input is available **any time during your turn** — before or after spending AP. Greyed out only after you've already sent one message this turn.
 - Label under the input: "free · once per turn" — no one needs to guess whether it costs AP
 - Game mechanics: Flipper takes your words at face value. Say you're buying in one area → Flipper races there → you buy somewhere else. The tutorial explains this through play, not text.
 
