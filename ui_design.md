@@ -6,7 +6,7 @@ This document defines the exact layout, color palette, typography, and text copy
 
 ## 1. Visual Language & Typography
 
-**Vibe:** Cyberpunk-retro / "Corporate Dystopia Pixel Art"
+**Vibe:** Warm Isometric Pixel Art / "Twilight Corporate Dystopia" — terracotta neutrals, gold + orange highlights, cool blue reserved for action accents against the warm base.
 - **Typography:** `Press Start 2P` (Google Fonts) for headers and numbers, `VT323` (Google Fonts) for body text and tooltips to ensure readability at smaller sizes.
 - **Borders:** 2px solid, sharp edges (no `border-radius`), often with contrasting border colors.
 - **Backgrounds:** Flat colors with subtle noise overlays (CSS `url('data:image...')`) or repetitive scanline gradients.
@@ -15,14 +15,16 @@ This document defines the exact layout, color palette, typography, and text copy
 
 | Token | Hex | Usage |
 |---|---|---|
-| `--color-bg-deep` | `#111115` | Main document background, space behind the board |
-| `--color-panel-bg` | `#1E1E24` | Background for UI panels (Player Card, Action Panel) |
-| `--color-panel-border`| `#3F3F5A` | Standard border for UI panels |
-| `--color-text-main` | `#E0E0E5` | Primary body text |
-| `--color-text-muted`| `#8B8B9A` | Secondary text, inactive states |
+| `--color-bg-deep` | `#1A1510` | Main document background, warm near-black behind the board |
+| `--color-panel-bg` | `#241C18` | Background for UI panels (Player Card, Action Panel) |
+| `--color-panel-border`| `#4A342A` | Warm brown border for UI panels |
+| `--color-board-plane` | `#2D1E14` | Tint under the isometric tile grid |
+| `--color-text-main` | `#F0E6D5` | Primary body text (warm off-white) |
+| `--color-text-muted`| `#9A8875` | Secondary text, inactive states (warm taupe) |
 | `--color-gold` | `#FFD700` | Stars, Player Cash, "YOU" highlighting |
 | `--color-orange` | `#E56B30` | Flipper highlighting, alerts, warning states |
-| `--color-neon-blue` | `#2D9CDB` | Action buttons (Buy/Develop), positive changes |
+| `--color-copper` | `#B8732A` | Mid accents, dev-level stars glow, district heat fills |
+| `--color-neon-blue` | `#2D9CDB` | Action buttons (Buy/Develop), positive changes — cool pop against warm base |
 | `--color-neon-green`| `#27AE60` | Rent income popups, Boom events |
 | `--color-danger` | `#E74C3C` | Debt/Bankruptcy warnings, Bust events |
 

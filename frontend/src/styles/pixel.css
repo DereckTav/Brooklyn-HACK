@@ -1,0 +1,25 @@
+:root {
+  /* Warm isometric palette — dark terracotta base, gold + orange highlights */
+  --color-bg-deep: #1a1510;
+  --color-panel-bg: #241c18;
+  --color-panel-border: #4a342a;
+  --color-board-plane: #2d1e14;
+  --color-text-main: #f0e6d5;
+  --color-text-muted: #9a8875;
+  --color-gold: #ffd700;
+  --color-orange: #e56b30;
+  --color-copper: #b8732a;
+  --color-neon-blue: #2d9cdb;
+  --color-neon-green: #27ae60;
+  --color-danger: #e74c3c;
+
+  --font-display: "Press Start 2P", monospace;
+  --font-body: "VT323", monospace;
+
+  --tile-w: 128px;
+  --tile-h: 64px;
+}
+
+img {
+  image-rendering: pixelated;
+}
