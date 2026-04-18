@@ -4,18 +4,22 @@ import { useGameStore } from "../store/gameStore";
 export default function APDiceRoll() {
   const open = useGameStore((s) => s.diceModalOpen);
   const turn = useGameStore((s) => s.turn);
-  const setAP = useGameStore((s) => s.setAP);
+  const rollAP = useGameStore((s) => s.rollAP);
 
   const [rolling, setRolling] = useState(false);
   const [result, setResult] = useState<number | null>(null);
 
   if (!open) return null;
 
-  const roll = () => {
+  const roll = async () => {
     setRolling(true);
     setResult(null);
-    const ap = Math.floor(Math.random() * 4) + 2; // 1d4+1 → 2..5
-    window.setTimeout(() => {
+
+    // Visual spin for 1.4s, then fetch the real AP from the backend
+    window.setTimeout(async () => {
+      await rollAP(); // This calls the backend and sets AP in the store
+      // Read the AP that was just set in the store
+      const ap = useGameStore.getState().ap;
       setRolling(false);
       setResult(ap);
     }, 1400);
@@ -23,8 +27,9 @@ export default function APDiceRoll() {
 
   const proceed = () => {
     if (result == null) return;
-    setAP(result);
     setResult(null);
+    // AP is already set from rollAP — just close the modal
+    useGameStore.setState({ diceModalOpen: false });
   };
 
   return (

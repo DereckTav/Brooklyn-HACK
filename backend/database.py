@@ -1,8 +1,10 @@
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 # MVP uses local SQLite database for save/resume functionality
+os.makedirs("./backend/data", exist_ok=True)
 SQLALCHEMY_DATABASE_URL = "sqlite:///./backend/data/mogul_blocks.db"
 
 engine = create_engine(

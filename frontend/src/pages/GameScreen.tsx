@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import APDiceRoll from "../components/APDiceRoll";
 import DistrictBoard from "../components/DistrictBoard";
 import PlayerCard from "../components/PlayerCard";
@@ -7,7 +8,23 @@ import { useGameStore } from "../store/gameStore";
 
 export default function GameScreen() {
   const ap = useGameStore((s) => s.ap);
+  const selectedId = useGameStore((s) => s.selectedPropertyId);
+  const listedIds = useGameStore((s) => s.listedPropertyIds);
+  const ownedIds = useGameStore((s) => s.ownedPropertyIds);
+  const loading = useGameStore((s) => s.loading);
+  const initGame = useGameStore((s) => s.initGame);
+  const buyProperty = useGameStore((s) => s.buyProperty);
+  const researchProperty = useGameStore((s) => s.researchProperty);
   const endTurn = useGameStore((s) => s.endTurn);
+
+  // Initialize the game on first mount
+  useEffect(() => {
+    initGame();
+  }, []);
+
+  const canAct = ap != null && ap >= 1 && selectedId != null && !loading;
+  const canBuy = canAct && listedIds.includes(selectedId!) && !ownedIds.includes(selectedId!);
+  const canResearch = canAct;
 
   return (
     <div className="game">
@@ -30,17 +47,36 @@ export default function GameScreen() {
         <section className="game__right">
           <RivalCard />
           <div className="action-panel">
-            <h2 className="card__label">== ACTIONS ==</h2>
-            <button className="btn" disabled>
+            <h2 className="card__label">== ACTIONS == {ap != null ? `(${ap} AP)` : ""}</h2>
+
+            {selectedId ? (
+              <div className="card__row" style={{ fontSize: "11px", color: "var(--color-gold)" }}>
+                Selected: {selectedId.replace(/_/g, " ").toUpperCase()}
+              </div>
+            ) : (
+              <div className="card__row card__row--muted" style={{ fontSize: "11px" }}>
+                Click a property to select it
+              </div>
+            )}
+
+            <button
+              className="btn"
+              disabled={!canBuy}
+              onClick={buyProperty}
+            >
               BUY
             </button>
-            <button className="btn" disabled>
+            <button
+              className="btn"
+              disabled={!canResearch}
+              onClick={researchProperty}
+            >
               RESEARCH
             </button>
             <button
               className="btn btn--primary"
               onClick={endTurn}
-              disabled={ap == null}
+              disabled={ap == null || loading}
             >
               END TURN
             </button>
@@ -51,7 +87,9 @@ export default function GameScreen() {
       <footer className="intel">
         <span className="intel__label">INTEL FEED</span>
         <span className="intel__body">
-          No intel yet. Spend AP on Research to reveal market catalysts.
+          {selectedId
+            ? `Property selected: ${selectedId.replace(/_/g, " ")}. Choose an action.`
+            : "No intel yet. Spend AP on Research to reveal market catalysts."}
         </span>
       </footer>
 

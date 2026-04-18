@@ -1,69 +1,146 @@
 """
-FastAPI router for core game loop functions.
+FastAPI router — game loop + player action endpoints.
 """
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from typing import Dict, Any
 
 from backend.database import get_db
-import backend.game_engine.core as core_engine
-from backend.models.core import GameState
+from backend.models.core import GameState, Player, Property
+import backend.game_engine.core as engine
 
 router = APIRouter(prefix="/game", tags=["Game"])
 
+
+# ── Request bodies ──────────────────────────
+class ActionRequest(BaseModel):
+    property_id: str
+
+
+# ── Game lifecycle ──────────────────────────
+
 @router.post("/start/{session_id}")
 def start_game(session_id: str, db: Session = Depends(get_db)):
-    """Initializes a new game session and populates the properties."""
-    game = core_engine.create_new_game(db, session_id)
+    """Create a new game session (wipes any existing one with same id)."""
+    game = engine.create_new_game(db, session_id)
     return {"message": "Game started", "session_id": game.id, "turn": game.turn}
+
 
 @router.post("/{session_id}/turn/start")
 def start_turn(session_id: str, db: Session = Depends(get_db)):
-    """
-    Rolls AP for the current turn.
-    Expected to be called once per turn by the frontend before actions are taken.
-    """
-    game = db.query(GameState).filter(GameState.id == session_id).first()
-    if not game:
-        raise HTTPException(status_code=404, detail="Game session not found")
-        
+    """Roll AP for the turn & drip-feed new listings."""
+    game = _get_game(db, session_id)
     if game.current_ap > 0:
-         return {"message": "Already rolled for this turn", "ap": game.current_ap}
-         
-    rolled_ap = core_engine.start_turn(db, game)
-    
-    return {
-        "message": f"Rolled {rolled_ap} AP",
-        "turn": game.turn,
-        "ap": rolled_ap
-    }
+        return {"message": "Already rolled for this turn", "ap": game.current_ap}
+    result = engine.start_turn(db, game)
+    return result
+
 
 @router.post("/{session_id}/turn/end")
 def end_turn(session_id: str, db: Session = Depends(get_db)):
-    """
-    Ends the current turn, processing all rent collection and debt interest.
-    Provides the new turn number back.
-    """
-    game = db.query(GameState).filter(GameState.id == session_id).first()
-    if not game:
-        raise HTTPException(status_code=404, detail="Game session not found")
-        
-    core_engine.end_turn(db, game)
-    
-    return {
-        "message": "Turn ended, cash flow processed",
-        "turn": game.turn
-    }
+    """End the current turn — collect rent, expire listings, check victory."""
+    game = _get_game(db, session_id)
+    result = engine.end_turn(db, game)
+    return result
+
+
+# ── Player actions (each costs 1 AP) ───────
+
+@router.post("/{session_id}/action/buy")
+def action_buy(session_id: str, body: ActionRequest, db: Session = Depends(get_db)):
+    """Buy a listed property."""
+    game = _get_game(db, session_id)
+    player = _get_user(db, session_id)
+    result = engine.buy_property(db, game, player, body.property_id)
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.post("/{session_id}/action/develop")
+def action_develop(session_id: str, body: ActionRequest, db: Session = Depends(get_db)):
+    """Develop an owned property (increase dev level, rent, and value)."""
+    game = _get_game(db, session_id)
+    player = _get_user(db, session_id)
+    result = engine.develop_property(db, game, player, body.property_id)
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.post("/{session_id}/action/research")
+def action_research(session_id: str, body: ActionRequest, db: Session = Depends(get_db)):
+    """Research a property for intel (trivia stub for Phase 5)."""
+    game = _get_game(db, session_id)
+    player = _get_user(db, session_id)
+    result = engine.research_action(db, game, player, body.property_id)
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+# ── Status / full state ────────────────────
 
 @router.get("/{session_id}/status")
 def get_status(session_id: str, db: Session = Depends(get_db)):
-    """Returns the current turn, AP, and brief player status."""
+    """Full game state snapshot for the frontend."""
+    game = _get_game(db, session_id)
+    user = _get_user(db, session_id)
+    flipper = db.query(Player).filter(
+        Player.game_id == session_id, Player.role == "FLIPPER"
+    ).first()
+
+    props = db.query(Property).filter(Property.game_id == session_id).all()
+
+    return {
+        "turn": game.turn,
+        "max_turns": game.max_turns,
+        "ap_remaining": game.current_ap,
+        "finance_tier": game.finance_tier,
+        "player": {
+            "cash": user.cash,
+            "debt": user.debt,
+            "reputation": user.reputation,
+            "is_bankrupt": user.is_bankrupt,
+            "net_worth": engine._calc_net_worth(db, user),
+        },
+        "flipper": {
+            "cash": flipper.cash if flipper else 0,
+            "is_bankrupt": flipper.is_bankrupt if flipper else False,
+        },
+        "properties": [
+            {
+                "id": p.id,
+                "name": p.name,
+                "tier": p.tier,
+                "base_value": p.base_value,
+                "market_value": p.market_value,
+                "rent_value": p.rent_value,
+                "dev_level": p.dev_level,
+                "owner_id": p.owner_id,
+                "is_listed": p.is_listed,
+                "unlock_turn": p.unlock_turn,
+                "expiry_turn": p.expiry_turn,
+                "sprite_key": p.sprite_key,
+            }
+            for p in props
+        ],
+    }
+
+
+# ── Helpers ─────────────────────────────────
+
+def _get_game(db: Session, session_id: str) -> GameState:
     game = db.query(GameState).filter(GameState.id == session_id).first()
     if not game:
         raise HTTPException(status_code=404, detail="Game session not found")
-        
-    return {
-        "turn": game.turn,
-        "ap_remaining": game.current_ap,
-        "max_turns": game.max_turns
-    }
+    return game
+
+
+def _get_user(db: Session, session_id: str) -> Player:
+    player = db.query(Player).filter(
+        Player.game_id == session_id, Player.role == "USER"
+    ).first()
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+    return player
