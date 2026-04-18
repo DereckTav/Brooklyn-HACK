@@ -6,7 +6,9 @@ import random
 from sqlalchemy.orm import Session
 from backend.models.core import GameState, Player, Property
 from backend.config import BALANCE
-
+import backend.config as config
+from backend.game_engine.ai.base import Action, RivalStrategy
+from backend.game_engine.ai.flipper import FlipperStrategy
 
 # ──────────────────────────────────────────────
 #  PROPERTY BLUEPRINTS (10 total, matching sprites)
@@ -48,6 +50,11 @@ def _calc_net_worth(db: Session, player: Player) -> int:
 # ──────────────────────────────────────────────
 #  GAME INIT
 # ──────────────────────────────────────────────
+
+# Stateless strategy instances keyed by Player.role
+_STRATEGIES: dict[str, RivalStrategy] = {
+    "FLIPPER": FlipperStrategy(),
+}
 
 def create_new_game(db: Session, session_id: str) -> GameState:
     """Initializes a new game: players + 10 property plots."""
@@ -123,14 +130,15 @@ def start_turn(db: Session, game: GameState) -> dict:
             interest = int(p.debt * BALANCE.MORTGAGE_INTEREST_RATE)
             p.cash -= interest
 
-    # 2. Drip-feed property listings
+    # 2. Drip-feed property listings (unlock properties scheduled for this turn)
     props = db.query(Property).filter(
         Property.game_id == game.id,
         Property.unlock_turn <= game.turn,
         Property.is_listed == False,
         Property.owner_id == None,
-        Property.expiry_turn == None,  # hasn't already expired once
+        Property.expiry_turn == None,
     ).all()
+    
     for prop in props:
         prop.is_listed = True
         prop.expiry_turn = game.turn + BALANCE.PROPERTY_EXPIRY_TURNS
@@ -153,17 +161,22 @@ def start_turn(db: Session, game: GameState) -> dict:
 def end_turn(db: Session, game: GameState) -> dict:
     """
     End-of-turn sequence (architecture.md §2):
-      1. Collect rent for all owned properties
-      2. Expire old listings
-      3. Check bankruptcy / victory
-      4. Advance turn counter
+      1. AI Phase: rivals act before rent is collected
+      2. Collect rent for all owned properties
+      3. Expire old listings
+      4. Check bankruptcy / victory
+      5. Advance turn counter
+      6. AI Scan: prepare targets for next turn
     Returns dict with summary info.
     """
+    # 1. AI Phase: rivals execute any pending buys/sells before rent is settled.
+    ai_events = ai_phase(db, game)
+
     user = db.query(Player).filter(
         Player.game_id == game.id, Player.role == "USER"
     ).first()
 
-    # 1. Rent collection
+    # 2. Rent collection
     total_rent = 0
     owned = db.query(Property).filter(
         Property.game_id == game.id,
@@ -176,7 +189,7 @@ def end_turn(db: Session, game: GameState) -> dict:
             if owner.id == user.id:
                 total_rent += prop.rent_value
 
-    # 2. Expire old listings (unowned past their expiry turn)
+    # 3. Expire old listings (unowned past their expiry turn)
     expired_ids = []
     expired = db.query(Property).filter(
         Property.game_id == game.id,
@@ -190,7 +203,7 @@ def end_turn(db: Session, game: GameState) -> dict:
         prop.market_value = int(prop.market_value * 0.9)
         expired_ids.append(prop.id)
 
-    # 3. Victory / bankruptcy checks
+    # 4. Victory / bankruptcy checks
     game_over = False
     victory = False
     net_worth = _calc_net_worth(db, user) if user else 0
@@ -212,12 +225,15 @@ def end_turn(db: Session, game: GameState) -> dict:
             user.is_bankrupt = True
             game_over = True
 
-    # 4. Advance turn
+    # 5. Advance turn
     if game.turn >= game.max_turns:
         game_over = True
     else:
         game.turn += 1
-        game.current_ap = 0
+        game.current_ap = 0 # AP resets
+
+    # 6. AI Scan: flag next-turn targets so the 👀 icon is visible immediately.
+    ai_scan_phase(db, game)
 
     db.commit()
     return {
@@ -227,6 +243,7 @@ def end_turn(db: Session, game: GameState) -> dict:
         "net_worth": net_worth,
         "game_over": game_over,
         "victory": victory,
+        "ai_events": ai_events,
     }
 
 
@@ -344,3 +361,101 @@ def research_action(db: Session, game: GameState, player: Player, property_id: s
         },
         "ap_remaining": game.current_ap,
     }
+
+
+# ──────────────────────────────────────────────
+#  AI HELPERS
+# ──────────────────────────────────────────────
+
+def _active_rivals(db: Session, game: GameState) -> list[Player]:
+    return (
+        db.query(Player)
+        .filter(
+            Player.game_id == game.id,
+            Player.role != "USER",
+            Player.is_bankrupt == False,  # noqa: E712
+        )
+        .all()
+    )
+
+
+def ai_phase(db: Session, game: GameState) -> list[dict]:
+    """Run each rival's act() and apply resulting actions.
+
+    Returns event records for the intel feed.
+    """
+    events: list[dict] = []
+    for rival in _active_rivals(db, game):
+        strategy = _STRATEGIES.get(rival.role)
+        if strategy is None:
+            continue
+        for action in strategy.act(db, game, rival):
+            record = _apply_rival_action(db, game, rival, action)
+            if record is not None:
+                events.append(record)
+    db.flush()
+    return events
+
+
+def ai_scan_phase(db: Session, game: GameState) -> None:
+    """Run each rival's scan() to set targets for the next turn."""
+    for rival in _active_rivals(db, game):
+        strategy = _STRATEGIES.get(rival.role)
+        if strategy is None:
+            continue
+        strategy.scan(db, game, rival)
+
+
+def _apply_rival_action(
+    db: Session, game: GameState, rival: Player, action: Action
+) -> dict | None:
+    """Execute a single rival action. Silently drops actions that became invalid
+    between scan() and act() (e.g. player bought the target first).
+
+    TODO: replace with the shared ActionProcessor once the player Buy endpoint
+    lands in Step 3 — same validation logic, applied from both sides.
+    """
+    prop = (
+        db.query(Property)
+        .filter(Property.id == action["property_id"], Property.game_id == game.id)
+        .first()
+    )
+    if prop is None:
+        return None
+
+    atype = action.get("type")
+    if atype == "buy":
+        if prop.owner_id is not None or not prop.is_listed:
+            return None
+        if rival.cash < prop.market_value:
+            return None
+        rival.cash -= prop.market_value
+        prop.owner_id = rival.id
+        prop.is_listed = False
+        prop.expiry_turn = None
+        prop.is_flipper_target = False
+        prop.flipper_acquire_turn = None
+        return {
+            "actor": rival.role,
+            "action": "buy",
+            "property": prop.name,
+            "price": prop.market_value,
+            "turn": game.turn,
+        }
+
+    if atype == "sell":
+        if prop.owner_id != rival.id:
+            return None
+        rival.cash += prop.market_value
+        prop.owner_id = None
+        prop.is_listed = True
+        prop.expiry_turn = game.turn + BALANCE.PROPERTY_EXPIRY_TURNS
+        return {
+            "actor": rival.role,
+            "action": "sell",
+            "property": prop.name,
+            "price": prop.market_value,
+            "turn": game.turn,
+        }
+
+    return None

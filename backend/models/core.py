@@ -58,5 +58,9 @@ class Property(Base):
     unlock_turn = Column(Integer, default=1)     # Turn this property becomes available
     expiry_turn = Column(Integer, nullable=True) # Turn it expires if unbought
 
+    # Flipper AI targeting (visible to player as the 👀 icon)
+    is_flipper_target = Column(Boolean, default=False)
+    flipper_acquire_turn = Column(Integer, nullable=True) # Turn Flipper plans to buy
+
     game = relationship("GameState", back_populates="properties")
     owner = relationship("Player", back_populates="properties")
