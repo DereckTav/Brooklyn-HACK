@@ -89,11 +89,41 @@ def start_turn(db: Session, game: GameState) -> int:
     return rolled_ap
 
 def end_turn(db: Session, game: GameState):
-    """Ends the current turn, moving game state forward."""
+    """
+    Ends the current turn, processing all cash flow (Rent & Debt).
+    Moves the game state forward to the next round.
+    """
+    # 1. Cash Flow: Collect Rent for all owned properties
+    owned_properties = db.query(Property).filter(
+        Property.game_id == game.id,
+        Property.owner_id != None
+    ).all()
+    
+    for prop in owned_properties:
+        owner = db.query(Player).filter(Player.id == prop.owner_id).first()
+        if owner and not owner.is_bankrupt:
+            # Add rent income to owner's cash
+            # Rate is stored in prop.rent_value (dynamically shifts via catalysts later)
+            owner.cash += prop.rent_value
+            
+    # 2. Debt Math: Apply 5% interest per turn on any outstanding debt
+    players = db.query(Player).filter(Player.game_id == game.id).all()
+    for p in players:
+        if p.debt > 0 and not p.is_bankrupt:
+            # 5% interest per turn (simulating high tension leverage)
+            interest = int(p.debt * 0.05)
+            p.debt += interest
+            
+            # Check bankruptcy condition if cash < 0 and debt ratio is terrible (Tier 2 rules)
+            if p.cash < 0:
+                p.is_bankrupt = True
+    
+    # 3. Advance Turn State
     if game.turn >= game.max_turns:
-        # Game over state
+        # Game over state triggered
         pass
     else:
         game.turn += 1
         game.current_ap = 0 # AP resets
-        db.commit()
+        
+    db.commit()

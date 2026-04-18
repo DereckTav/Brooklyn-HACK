@@ -38,6 +38,23 @@ def start_turn(session_id: str, db: Session = Depends(get_db)):
         "ap": rolled_ap
     }
 
+@router.post("/{session_id}/turn/end")
+def end_turn(session_id: str, db: Session = Depends(get_db)):
+    """
+    Ends the current turn, processing all rent collection and debt interest.
+    Provides the new turn number back.
+    """
+    game = db.query(GameState).filter(GameState.id == session_id).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game session not found")
+        
+    core_engine.end_turn(db, game)
+    
+    return {
+        "message": "Turn ended, cash flow processed",
+        "turn": game.turn
+    }
+
 @router.get("/{session_id}/status")
 def get_status(session_id: str, db: Session = Depends(get_db)):
     """Returns the current turn, AP, and brief player status."""
