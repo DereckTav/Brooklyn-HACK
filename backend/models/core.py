@@ -66,3 +66,66 @@ class Property(Base):
 
     game = relationship("GameState", back_populates="properties")
     owner = relationship("Player", back_populates="properties")
+
+
+class Catalyst(Base):
+    __tablename__ = "catalysts"
+
+    id = Column(String, primary_key=True, index=True)
+    game_id = Column(String, ForeignKey("game_state.id"))
+
+    theme = Column(String)                       # "Esports championship hype"
+    category = Column(String)                    # gaming / tech / urban / finance / culture
+    copy = Column(String)                        # Player-facing description after it fires
+    direction = Column(String)                   # "boom" or "bust"
+
+    scheduled_turn = Column(Integer)             # Turn it fires
+    fired_turn = Column(Integer, nullable=True)  # Turn it actually fired (set on fire)
+    duration = Column(Integer, default=3)        # Turns the effect persists
+
+    rent_multiplier = Column(Float, default=1.0)   # Applied to every property's rent
+    value_multiplier = Column(Float, default=1.0)  # Applied to every property's value
+
+    status = Column(String, default="pending")   # pending / active / expired
+    revealed = Column(Boolean, default=False)    # Player researched it
+
+
+class TriviaSession(Base):
+    """One row per player's in-flight Research question."""
+    __tablename__ = "trivia_sessions"
+
+    id = Column(String, primary_key=True, index=True)  # = player_id for uniqueness
+    game_id = Column(String, ForeignKey("game_state.id"))
+    player_id = Column(String, ForeignKey("players.id"))
+
+    catalyst_id = Column(String, ForeignKey("catalysts.id"), nullable=True)
+    property_id = Column(String, ForeignKey("properties.id"), nullable=True)
+
+    question = Column(String)
+    options_json = Column(String)                # JSON list[str]
+    correct_index = Column(Integer)
+    category = Column(String)
+    source = Column(String)                      # openai / fallback
+    created_turn = Column(Integer)
+
+    # Speed-timer state captured when the modal opened so we can restore on answer.
+    paused_remaining_secs = Column(Float, nullable=True)
+
+
+class PregenTrivia(Base):
+    """
+    Trivia questions pre-generated in the background so Research returns instantly.
+    Keyed by (game_id, catalyst_id) — one pending pregen per catalyst.
+    """
+    __tablename__ = "pregen_trivia"
+
+    id = Column(String, primary_key=True, index=True)  # f"{game_id}_{catalyst_id}"
+    game_id = Column(String, ForeignKey("game_state.id"))
+    catalyst_id = Column(String, ForeignKey("catalysts.id"))
+
+    question = Column(String)
+    options_json = Column(String)
+    correct_index = Column(Integer)
+    category = Column(String)
+    source = Column(String)
+    created_turn = Column(Integer)
