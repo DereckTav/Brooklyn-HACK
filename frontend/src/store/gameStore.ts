@@ -29,6 +29,8 @@ interface GameStore {
   selectedPropertyId: string | null;
   diceModalOpen: boolean;
   loading: boolean;
+  gameOver: boolean;
+  victoryState: "WIN" | "LOSS" | "BANKRUPT" | null;
 
   // Actions
   initGame: () => Promise<void>;
@@ -37,7 +39,8 @@ interface GameStore {
   buyProperty: () => Promise<void>;
   researchProperty: () => Promise<void>;
   endTurn: () => Promise<void>;
-  refreshStatus: () => Promise<void>;
+  playAgain: () => Promise<void>;
+  refreshStatus: () => Promise<any>;
 }
 
 export const useGameStore = create<GameStore>()((set, get) => ({
@@ -52,6 +55,8 @@ export const useGameStore = create<GameStore>()((set, get) => ({
   selectedPropertyId: null,
   diceModalOpen: false,
   loading: false,
+  gameOver: false,
+  victoryState: null,
 
   initGame: async () => {
     set({ loading: true });
@@ -66,6 +71,12 @@ export const useGameStore = create<GameStore>()((set, get) => ({
       loading: false,
     });
     await get().refreshStatus();
+    set({ gameOver: false, victoryState: null });
+  },
+
+  playAgain: async () => {
+    set({ loading: true, gameOver: false, victoryState: null });
+    await get().initGame();
   },
 
   rollAP: async () => {
@@ -125,22 +136,29 @@ export const useGameStore = create<GameStore>()((set, get) => ({
     const res = await fetch(`${API}/${SESSION}/turn/end`, { method: "POST" });
     const data = await res.json();
 
-    if (data.game_over) {
-      alert(data.victory ? "🏆 MOGUL VICTORY! You win!" : "Game Over!");
-    }
+    const status = await get().refreshStatus();
+    const isBankrupt = status?.player?.is_bankrupt ?? false;
+    const victoryState = data.game_over
+      ? isBankrupt
+        ? "BANKRUPT"
+        : data.victory
+        ? "WIN"
+        : "LOSS"
+      : null;
 
     set({
       ap: null,
-      diceModalOpen: true,
+      diceModalOpen: data.game_over ? false : true,
       selectedPropertyId: null,
       loading: false,
+      gameOver: data.game_over,
+      victoryState,
     });
-    await get().refreshStatus();
   },
 
   refreshStatus: async () => {
     const res = await fetch(`${API}/${SESSION}/status`);
-    if (!res.ok) return;
+    if (!res.ok) return null;
     const data = await res.json();
 
     const userId = `${SESSION}_user`;

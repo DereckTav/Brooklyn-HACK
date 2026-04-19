@@ -4,6 +4,7 @@ import DistrictBoard from "../components/DistrictBoard";
 import PlayerCard from "../components/PlayerCard";
 import RivalCard from "../components/RivalCard";
 import TopBar from "../components/TopBar";
+import VictoryScreen from "../components/VictoryScreen";
 import { useGameStore } from "../store/gameStore";
 
 export default function GameScreen() {
@@ -12,6 +13,12 @@ export default function GameScreen() {
   const listedIds = useGameStore((s) => s.listedPropertyIds);
   const ownedIds = useGameStore((s) => s.ownedPropertyIds);
   const loading = useGameStore((s) => s.loading);
+  const cash = useGameStore((s) => s.cash);
+  const netWorth = useGameStore((s) => s.netWorth);
+  const turn = useGameStore((s) => s.turn);
+  const gameOver = useGameStore((s) => s.gameOver);
+  const victoryState = useGameStore((s) => s.victoryState);
+  const playAgain = useGameStore((s) => s.playAgain);
   const initGame = useGameStore((s) => s.initGame);
   const buyProperty = useGameStore((s) => s.buyProperty);
   const researchProperty = useGameStore((s) => s.researchProperty);
@@ -22,7 +29,7 @@ export default function GameScreen() {
     initGame();
   }, []);
 
-  const canAct = ap != null && ap >= 1 && selectedId != null && !loading;
+  const canAct = ap != null && ap >= 1 && selectedId != null && !loading && !gameOver;
   const canBuy = canAct && listedIds.includes(selectedId!) && !ownedIds.includes(selectedId!);
   const canResearch = canAct;
 
@@ -76,7 +83,7 @@ export default function GameScreen() {
             <button
               className="btn btn--primary"
               onClick={endTurn}
-              disabled={ap == null || loading}
+              disabled={ap == null || loading || gameOver}
             >
               END TURN
             </button>
@@ -94,6 +101,16 @@ export default function GameScreen() {
       </footer>
 
       <APDiceRoll />
+      {gameOver && victoryState ? (
+        <VictoryScreen
+          variant={victoryState}
+          cash={cash}
+          netWorth={netWorth}
+          propsOwned={ownedIds.length}
+          turn={turn}
+          onPlayAgain={playAgain}
+        />
+      ) : null}
     </div>
   );
 }
