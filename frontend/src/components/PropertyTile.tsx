@@ -12,7 +12,6 @@ interface Props {
 
 export default function PropertyTile({ property, position }: Props) {
   const selectedId = useGameStore((s) => s.selectedPropertyId);
-  const selectProperty = useGameStore((s) => s.selectProperty);
   const meta = useGameStore((s) => s.propertyMeta[property.id]);
   const turn = useGameStore((s) => s.turn);
   const processingTileId = useGameStore((s) => s.processingTileId);
