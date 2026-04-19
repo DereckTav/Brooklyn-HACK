@@ -8,7 +8,6 @@ export default function Portfolio() {
   const cash = useGameStore((s) => s.cash);
   const debt = useGameStore((s) => s.debt);
   const netWorth = useGameStore((s) => s.netWorth);
-  const selectProperty = useGameStore((s) => s.selectProperty);
 
   const ownedProperties = PROPERTIES.filter((p) => ownedIds.includes(p.id));
   const totalRent = ownedProperties.reduce((sum, p) => {
