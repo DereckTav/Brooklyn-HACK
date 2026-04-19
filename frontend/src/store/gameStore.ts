@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { GridPos } from "../types/game";
 import { BASE_POSITIONS, shufflePositions } from "../data/properties";
 
-const API = "http://localhost:8000/api/game";
+const API = "https://mogul-blocks-backend.onrender.com/api/game";
 const SESSION = "default_session"; // Single-player MVP
 
 let toastId = 0;
