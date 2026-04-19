@@ -4,6 +4,7 @@ export default function TopBar() {
   const turn = useGameStore((s) => s.turn);
   const ap = useGameStore((s) => s.ap);
   const diceModalOpen = useGameStore((s) => s.diceModalOpen);
+  const setPauseOpen = useGameStore((s) => s.setPauseOpen);
 
   return (
     <header className="topbar">
@@ -16,7 +17,7 @@ export default function TopBar() {
       </span>
 
       <span className="topbar__slot topbar__slot--right">
-        <button className="topbar__pause" aria-label="Pause">
+        <button className="topbar__pause" aria-label="Pause" onClick={() => setPauseOpen(true)}>
           ||
         </button>
       </span>

@@ -7,6 +7,12 @@ import RivalCard from "../components/RivalCard";
 import TopBar from "../components/TopBar";
 import Announcements from "../components/Announcements";
 import TurnTimer from "../components/TurnTimer";
+import Portfolio from "../components/Portfolio";
+import GameOverScreen from "../components/GameOverScreen";
+import PauseMenu from "../components/PauseMenu";
+import EventToast from "../components/EventToast";
+import BluffBar from "../components/BluffBar";
+import IntelFeed from "../components/IntelFeed";
 import { useGameStore } from "../store/gameStore";
 
 export default function GameScreen() {
@@ -21,9 +27,11 @@ export default function GameScreen() {
   const ownedIds = useGameStore((s) => s.ownedPropertyIds);
   const propertyMeta = useGameStore((s) => s.propertyMeta);
   const loading = useGameStore((s) => s.loading);
+  const gameOverData = useGameStore((s) => s.gameOverData);
   const initGame = useGameStore((s) => s.initGame);
   const resumeGame = useGameStore((s) => s.resumeGame);
   const buyProperty = useGameStore((s) => s.buyProperty);
+  const developProperty = useGameStore((s) => s.developProperty);
   const researchProperty = useGameStore((s) => s.researchProperty);
   const endTurn = useGameStore((s) => s.endTurn);
 
@@ -42,10 +50,15 @@ export default function GameScreen() {
   const isGameOver = isBankrupt || turn >= maxTurns;
   const canAct = ap != null && ap >= 1 && selectedId != null && !loading && !isGameOver;
   const canBuy = canAct && listedIds.includes(selectedId!) && !ownedIds.includes(selectedId!);
+  const canDevelop = canAct && ownedIds.includes(selectedId!) && (propertyMeta[selectedId!]?.devLevel ?? 0) < 3;
   const canResearch = canAct;
   
   const selectedMeta = selectedId ? propertyMeta[selectedId] : null;
   const selectedPriceStr = selectedMeta ? `$${Math.floor(selectedMeta.marketValue / 1000)}k` : "";
+
+  // Dev cost: $1,500 flat + 15% of market value (from config.py)
+  const devCost = selectedMeta ? 1500 + Math.floor(0.15 * selectedMeta.marketValue) : 0;
+  const devCostStr = devCost ? `$${(devCost / 1000).toFixed(1)}k` : "";
 
   return (
     <div className="game">
@@ -53,12 +66,8 @@ export default function GameScreen() {
       <div className="game__body">
         <section className="game__left">
           <PlayerCard />
-          <div className="card card--trash-talk">
-            <h2 className="card__label">== TRASH TALK ==</h2>
-            <div className="card__row card__row--muted">
-              &gt; Flipper is silent for now.
-            </div>
-          </div>
+          <Portfolio />
+          <BluffBar />
         </section>
 
         <section className="game__center">
@@ -90,6 +99,13 @@ export default function GameScreen() {
             </button>
             <button
               className="btn"
+              disabled={!canDevelop}
+              onClick={developProperty}
+            >
+              {canDevelop && devCostStr ? `DEVELOP — ${devCostStr}` : "DEVELOP"}
+            </button>
+            <button
+              className="btn"
               disabled={!canResearch}
               onClick={researchProperty}
             >
@@ -107,16 +123,12 @@ export default function GameScreen() {
         </section>
       </div>
 
-      <footer className="intel">
-        <span className="intel__label">INTEL FEED</span>
-        <span className="intel__body">
-          {selectedId
-            ? `Property selected: ${selectedId.replace(/_/g, " ")}. Choose an action.`
-            : "No intel yet. Spend AP on Research to reveal market catalysts."}
-        </span>
-      </footer>
+      <IntelFeed />
 
       <APDiceRoll />
+      <PauseMenu />
+      <EventToast />
+      {gameOverData && <GameOverScreen />}
     </div>
   );
 }
