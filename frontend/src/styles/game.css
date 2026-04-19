@@ -181,15 +181,24 @@
   transition-delay: 0.05s;
 }
 
-.tile--locked {
-  filter: grayscale(1) brightness(0.55) opacity(0.7);
+.tile--locked, .tile--expired {
   animation: none;
   cursor: default;
 }
 
-.tile--locked .tile__hitbox {
+.tile--locked .tile__hitbox, .tile--expired .tile__hitbox {
   pointer-events: auto; /* Allow hover lift */
   cursor: default;
+}
+
+/* Ghostly Glass for future properties (light, transparent, desaturated) */
+.tile--locked {
+  filter: grayscale(0.8) brightness(1.1) opacity(0.45);
+}
+
+/* Cold Grayscale for expired properties */
+.tile--expired {
+  filter: grayscale(1) brightness(0.4) opacity(0.5);
 }
 
 .tile__base {

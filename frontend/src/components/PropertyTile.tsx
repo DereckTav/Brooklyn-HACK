@@ -46,7 +46,8 @@ export default function PropertyTile({ property, position, unlocked }: Props) {
   };
 
   let tileClass = "tile";
-  if (!isInteractive) tileClass += " tile--locked";
+  if (isLocked) tileClass += " tile--locked";
+  if (isExpired) tileClass += " tile--expired";
   if (isSelected) tileClass += " tile--selected";
   if (isOwned) tileClass += " tile--owned-you";
   if (isRivalOwned) tileClass += " tile--owned-rival";
