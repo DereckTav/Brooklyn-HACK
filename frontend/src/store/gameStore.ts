@@ -5,6 +5,20 @@ import { BASE_POSITIONS, shufflePositions } from "../data/properties";
 const API = "http://localhost:8000/api/game";
 const SESSION = "default_session"; // Single-player MVP
 
+export type OwnerRole = "YOU" | "FLIPPER" | null;
+
+export interface PropertyMeta {
+  listed: boolean;
+  unlockTurn: number;
+  expiryTurn: number | null;
+  ownerRole: OwnerRole;
+  flipperTarget: boolean;
+  flipperAcquireTurn: number | null;
+  marketValue: number;
+  rentValue: number;
+  devLevel: number;
+}
+
 interface GameStore {
   turn: number;
   ap: number | null;
@@ -13,6 +27,7 @@ interface GameStore {
   netWorth: number;
   ownedPropertyIds: string[];
   listedPropertyIds: string[];
+  propertyMeta: Record<string, PropertyMeta>;
   selectedPropertyId: string | null;
   boardPositions: GridPos[];
   unlockTurns: Record<string, number>;
@@ -38,6 +53,7 @@ export const useGameStore = create<GameStore>()((set, get) => ({
   netWorth: 22_000,
   ownedPropertyIds: [],
   listedPropertyIds: [],
+  propertyMeta: {},
   selectedPropertyId: null,
   boardPositions: BASE_POSITIONS,
   unlockTurns: {},
@@ -63,9 +79,9 @@ export const useGameStore = create<GameStore>()((set, get) => ({
       unlockTurns: {},
       boardPositions: shuffled,
     });
-    
+
     // Also store game ID so we can support multiple later
-    
+
     await fetch(`${API}/start/${SESSION}`, { method: "POST" });
     // Immediately start turn 1 to get AP + listings
     const res = await fetch(`${API}/${SESSION}/turn/start`, { method: "POST" });
@@ -92,9 +108,7 @@ export const useGameStore = create<GameStore>()((set, get) => ({
   rollAP: async () => {
     const res = await fetch(`${API}/${SESSION}/turn/start`, { method: "POST" });
     const data = await res.json();
-    set({
-      ap: data.ap,
-    });
+    set({ ap: data.ap });
     await get().refreshStatus();
   },
 
@@ -165,18 +179,44 @@ export const useGameStore = create<GameStore>()((set, get) => ({
     const res = await fetch(`${API}/${SESSION}/status`);
     if (!res.ok) return;
     const data = await res.json();
+
+    const userId = `${SESSION}_user`;
+    const flipperId = `${SESSION}_flipper`;
+    const strip = (id: string) => id.replace(`${SESSION}_`, "");
+
+    const meta: Record<string, PropertyMeta> = {};
+    for (const p of data.properties) {
+      const short = strip(p.id);
+      let ownerRole: OwnerRole = null;
+      if (p.owner_id === userId) ownerRole = "YOU";
+      else if (p.owner_id === flipperId) ownerRole = "FLIPPER";
+      meta[short] = {
+        listed: p.is_listed,
+        unlockTurn: p.unlock_turn,
+        expiryTurn: p.expiry_turn,
+        ownerRole,
+        flipperTarget: Boolean(p.is_flipper_target),
+        flipperAcquireTurn: p.flipper_acquire_turn,
+        marketValue: p.market_value,
+        rentValue: p.rent_value,
+        devLevel: p.dev_level,
+      };
+    }
+
     set({
       turn: data.turn,
       cash: data.player.cash,
       debt: data.player.debt,
       netWorth: data.player.net_worth,
-      ap: data.ap_remaining > 0 ? data.ap_remaining : get().ap,
+      // Don't reveal AP while the dice modal is still up — let rollAP set it.
+      ap: get().diceModalOpen ? get().ap : data.ap_remaining,
+      propertyMeta: meta,
       ownedPropertyIds: data.properties
-        .filter((p: any) => p.owner_id === `${SESSION}_user`)
-        .map((p: any) => p.id.replace(`${SESSION}_`, "")),
+        .filter((p: any) => p.owner_id === userId)
+        .map((p: any) => strip(p.id)),
       listedPropertyIds: data.properties
         .filter((p: any) => p.is_listed)
-        .map((p: any) => p.id.replace(`${SESSION}_`, "")),
+        .map((p: any) => strip(p.id.replace(`${SESSION}_`, ""))),
       unlockTurns: data.properties.reduce((acc: Record<string, number>, p: any) => {
         acc[p.id.replace(`${SESSION}_`, "")] = p.unlock_turn;
         return acc;
