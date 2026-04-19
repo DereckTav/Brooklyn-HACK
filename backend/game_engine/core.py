@@ -437,7 +437,7 @@ def research_action(
     # If there's already an open session, return it (idempotent retry).
     existing = db.query(TriviaSession).filter(TriviaSession.id == player.id).first()
     if existing:
-        return _trivia_session_response(existing)
+        return _trivia_session_response(existing, game)
 
     catalyst = pick_catalyst_for_research(db, game)
     if catalyst is None:
@@ -467,6 +467,10 @@ def research_action(
         remaining = max(0.0, game.turn_expires_at - time.time())
         game.turn_expires_at = None
 
+    # Spend AP up-front so the modal can always be completed, even if the
+    # player sits idle past the turn timer in another browser tab.
+    game.current_ap -= 1
+
     session = TriviaSession(
         id=player.id,
         game_id=game.id,
@@ -484,7 +488,7 @@ def research_action(
     db.add(session)
     db.commit()
 
-    return _trivia_session_response(session)
+    return _trivia_session_response(session, game)
 
 
 def answer_trivia(db: Session, game: GameState, player: Player, answer_index: int) -> dict:
@@ -499,14 +503,12 @@ def answer_trivia(db: Session, game: GameState, player: Player, answer_index: in
     if not session:
         return {"success": False, "error": "No active research question"}
 
-    if game.current_ap < 1:
-        return {"success": False, "error": "Not enough AP to resolve research"}
+    # AP was already spent in research_action; no check needed here.
 
     catalyst = db.query(Catalyst).filter(Catalyst.id == session.catalyst_id).first()
     prop = db.query(Property).filter(Property.id == session.property_id).first()
 
     correct = answer_index == session.correct_index
-    game.current_ap -= 1
 
     intel: dict = {}
     if catalyst:
@@ -597,7 +599,7 @@ def pregen_next_trivia(session_id: str) -> None:
         db.close()
 
 
-def _trivia_session_response(session: TriviaSession) -> dict:
+def _trivia_session_response(session: TriviaSession, game: GameState | None = None) -> dict:
     return {
         "success": True,
         "trivia": {
@@ -608,6 +610,8 @@ def _trivia_session_response(session: TriviaSession) -> dict:
             "source": session.source,
             "property_id": session.property_id,
         },
+        "ap_remaining": game.current_ap if game is not None else None,
+        "turn_expires_at": game.turn_expires_at if game is not None else None,
     }
 
 
