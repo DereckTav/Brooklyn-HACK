@@ -1,6 +1,5 @@
 import type { GridPos, Property } from "../types/game";
 import { useGameStore } from "../store/gameStore";
-import devBadge from "../../../sprites/dev_badge.svg";
 
 const TILE_W = 128;
 const ROW_STAGGER_X = 64;
