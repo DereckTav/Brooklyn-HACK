@@ -56,8 +56,8 @@ export default function GameScreen() {
   const selectedMeta = selectedId ? propertyMeta[selectedId] : null;
   const selectedPriceStr = selectedMeta ? `$${Math.floor(selectedMeta.marketValue / 1000)}k` : "";
 
-  // Dev cost: $1,500 flat + 15% of market value (from config.py)
-  const devCost = selectedMeta ? 1500 + Math.floor(0.15 * selectedMeta.marketValue) : 0;
+  // Dev cost: $500 flat + 15% of market value (from config.py)
+  const devCost = selectedMeta ? 500 + Math.floor(0.15 * selectedMeta.marketValue) : 0;
   const devCostStr = devCost ? `$${(devCost / 1000).toFixed(1)}k` : "";
 
   return (

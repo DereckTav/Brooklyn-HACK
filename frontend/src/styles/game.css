@@ -447,6 +447,32 @@
 }
 .tile--owned-rival .tile__tier { color: var(--color-orange); }
 
+/* Development Level - Digital Readout */
+.tile__level-readout {
+  position: absolute;
+  top: 10px; /* Floating above building */
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-bg-deep);
+  border: 1px solid var(--color-gold);
+  color: var(--color-gold);
+  font-family: var(--font-display);
+  font-size: 8px;
+  padding: 3px 6px;
+  z-index: 15;
+  pointer-events: none;
+  box-shadow: 
+    0 0 8px rgba(255, 215, 0, 0.4),
+    inset 0 0 2px rgba(255, 215, 0, 0.2);
+  letter-spacing: 1px;
+}
+
+.tile--owned-rival .tile__level-readout {
+  border-color: var(--color-orange);
+  color: var(--color-orange);
+  box-shadow: 0 0 8px rgba(229, 107, 48, 0.4);
+}
+
 .tile--selected {
   /* z-index handled by natural row order in PropertyTile.tsx */
 }
@@ -467,6 +493,12 @@
   filter: drop-shadow(0 0 1px #fff);
   /* Sync pulse with tile-bob (2.4s) and remove vertical motion to inherit tile's bob */
   animation: selection-pulse-sync 2.4s ease-in-out infinite;
+  transition: top 0.2s ease;
+}
+
+/* Push the pyramid up so it doesn't overlap the level readout */
+.tile--has-level .tile__selection-indicator {
+  top: -36px;
 }
 
 @keyframes selection-pulse-sync {

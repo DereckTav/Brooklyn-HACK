@@ -1,5 +1,7 @@
 import type { GridPos, Property } from "../types/game";
 import { useGameStore } from "../store/gameStore";
+import starFilled from "../../../sprites/star_filled.svg";
+import starEmpty from "../../../sprites/star_empty.svg";
 
 const TILE_W = 128;
 const ROW_STAGGER_X = 64;
@@ -21,6 +23,7 @@ export default function PropertyTile({ property, position }: Props) {
   const isOwned = ownerRole === "YOU";
   const isRivalOwned = ownerRole === "FLIPPER";
   const isListed = meta?.listed ?? false;
+  const devLevel = meta?.devLevel ?? 0;
 
   const turnsUntilExpiry = isListed && meta?.expiryTurn != null ? meta.expiryTurn - turn : null;
   const isExpiringSoon = turnsUntilExpiry === 0;
@@ -47,6 +50,7 @@ export default function PropertyTile({ property, position }: Props) {
   if (isSelected) tileClass += " tile--selected";
   if (isOwned) tileClass += " tile--owned-you";
   if (isRivalOwned) tileClass += " tile--owned-rival";
+  if ((isOwned || isRivalOwned) && devLevel > 0) tileClass += " tile--has-level";
 
   return (
     <button
@@ -61,6 +65,13 @@ export default function PropertyTile({ property, position }: Props) {
         <div className="tile__shadow" />
         <div className="tile__base" />
         <img src={property.sprite} alt={property.name} className="tile__sprite" />
+
+        {/* Development Level - Digital Readout */}
+        {(isOwned || isRivalOwned) && devLevel > 0 && (
+          <div className="tile__level-readout">
+            LVL {devLevel}
+          </div>
+        )}
 
         {/* Status Badges for non-interactive tiles */}
         {isLocked && (
