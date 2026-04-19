@@ -12,7 +12,6 @@ export interface PropertyMeta {
   unlockTurn: number;
   expiryTurn: number | null;
   ownerRole: OwnerRole;
-  flipperTarget: boolean;
   flipperAcquireTurn: number | null;
   marketValue: number;
   rentValue: number;
@@ -27,6 +26,7 @@ interface GameStore {
   netWorth: number;
   isBankrupt: boolean;
   maxTurns: number;
+  turnExpiresAt: number | null;
   flipperProps: number;
   flipperCash: number;
   ownedPropertyIds: string[];
@@ -43,6 +43,7 @@ interface GameStore {
   resumeGame: () => Promise<void>;
   rollAP: () => Promise<void>;
   selectProperty: (id: string | null) => void;
+  activateTimer: () => Promise<void>;
   buyProperty: () => Promise<void>;
   researchProperty: () => Promise<void>;
   endTurn: () => Promise<void>;
@@ -57,6 +58,7 @@ export const useGameStore = create<GameStore>()((set, get) => ({
   netWorth: 22_000,
   isBankrupt: false,
   maxTurns: 20,
+  turnExpiresAt: null,
   flipperProps: 0,
   flipperCash: 0,
   ownedPropertyIds: [],
@@ -117,6 +119,11 @@ export const useGameStore = create<GameStore>()((set, get) => ({
     const res = await fetch(`${API}/${SESSION}/turn/start`, { method: "POST" });
     const data = await res.json();
     set({ ap: data.ap });
+    await get().refreshStatus();
+  },
+
+  activateTimer: async () => {
+    await fetch(`${API}/${SESSION}/turn/activate_timer`, { method: "POST" });
     await get().refreshStatus();
   },
 
@@ -210,7 +217,6 @@ export const useGameStore = create<GameStore>()((set, get) => ({
         unlockTurn: p.unlock_turn,
         expiryTurn: p.expiry_turn,
         ownerRole,
-        flipperTarget: Boolean(p.is_flipper_target),
         flipperAcquireTurn: p.flipper_acquire_turn,
         marketValue: p.market_value,
         rentValue: p.rent_value,
@@ -225,6 +231,7 @@ export const useGameStore = create<GameStore>()((set, get) => ({
       netWorth: data.player.net_worth,
       isBankrupt: data.player.is_bankrupt,
       maxTurns: data.max_turns,
+      turnExpiresAt: data.turn_expires_at,
       flipperCash: data.flipper.cash,
       flipperProps: data.properties.filter((p: any) => p.owner_id === flipperId).length,
       // Don't reveal AP while the dice modal is still up — let rollAP set it.

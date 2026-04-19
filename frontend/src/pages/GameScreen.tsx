@@ -6,6 +6,7 @@ import PlayerCard from "../components/PlayerCard";
 import RivalCard from "../components/RivalCard";
 import TopBar from "../components/TopBar";
 import Announcements from "../components/Announcements";
+import TurnTimer from "../components/TurnTimer";
 import { useGameStore } from "../store/gameStore";
 
 export default function GameScreen() {
@@ -62,6 +63,7 @@ export default function GameScreen() {
 
         <section className="game__center">
           <DistrictBoard />
+          <TurnTimer />
         </section>
 
         <section className="game__right">
