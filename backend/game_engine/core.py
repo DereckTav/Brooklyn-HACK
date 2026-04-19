@@ -125,9 +125,33 @@ def create_new_game(db: Session, session_id: str) -> GameState:
 
 def _check_time(game: GameState) -> dict | None:
     """Helper to reject actions if the speed timer has run out."""
+    if game.is_paused:
+        return None
     if game.turn_expires_at and time.time() > game.turn_expires_at:
         return {"success": False, "error": "Turn time expired (Speed Tycoon mode)"}
     return None
+
+
+def pause_game(db: Session, game: GameState) -> dict:
+    """Freeze the speed timer."""
+    if game.turn_expires_at:
+        game.timer_remaining_at_pause = max(0, game.turn_expires_at - time.time())
+        game.turn_expires_at = None
+    
+    game.is_paused = True
+    db.commit()
+    return {"success": True, "remaining": game.timer_remaining_at_pause}
+
+
+def resume_game(db: Session, game: GameState) -> dict:
+    """Unfreeze the speed timer."""
+    if game.timer_remaining_at_pause is not None:
+        game.turn_expires_at = time.time() + game.timer_remaining_at_pause
+        game.timer_remaining_at_pause = None
+    
+    game.is_paused = False
+    db.commit()
+    return {"success": True, "expires_at": game.turn_expires_at}
 
 
 def activate_timer(db: Session, game: GameState) -> dict:

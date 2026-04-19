@@ -4,11 +4,11 @@ import { useGameStore } from "../store/gameStore";
 export default function TurnTimer() {
   const turnExpiresAt = useGameStore((s) => s.turnExpiresAt);
   const endTurn = useGameStore((s) => s.endTurn);
+  const pauseOpen = useGameStore((s) => s.pauseOpen);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!turnExpiresAt) {
-      setTimeLeft(null);
+    if (!turnExpiresAt || pauseOpen) {
       return;
     }
 
@@ -25,18 +25,21 @@ export default function TurnTimer() {
     updateTimer();
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
-  }, [turnExpiresAt, endTurn]);
+  }, [turnExpiresAt, endTurn, pauseOpen]);
 
-  if (timeLeft === null) return null;
-
-  const isDanger = timeLeft < 10;
-  const progress = (timeLeft / 40) * 100; // Fixed 40s limit from BALANCE
+  if (timeLeft === null && !turnExpiresAt) return null;
+  
+  // If paused, we still want to show the last time remaining
+  const displayTime = timeLeft ?? (turnExpiresAt ? Math.max(0, turnExpiresAt - Date.now() / 1000) : 40);
+  
+  const isDanger = displayTime < 10;
+  const progress = (displayTime / 40) * 100;
 
   return (
     <div className={`turn-timer ${isDanger ? "turn-timer--danger" : ""}`}>
       <div className="turn-timer__label">SESSION TIME</div>
       <div className="turn-timer__clock">
-        [ 00:{Math.ceil(timeLeft).toString().padStart(2, "0")} ]
+        [ 00:{Math.ceil(displayTime).toString().padStart(2, "0")} ]
       </div>
       <div className="turn-timer__bar-track">
         <div 

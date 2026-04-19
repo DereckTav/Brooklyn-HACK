@@ -52,6 +52,22 @@ def activate_timer(session_id: str, db: Session = Depends(get_db)):
     return result
 
 
+@router.post("/{session_id}/pause")
+def pause_game(session_id: str, db: Session = Depends(get_db)):
+    """Freeze the speed timer."""
+    game = _get_game(db, session_id)
+    result = engine.pause_game(db, game)
+    return result
+
+
+@router.post("/{session_id}/resume")
+def resume_game_timer(session_id: str, db: Session = Depends(get_db)):
+    """Unfreeze the speed timer."""
+    game = _get_game(db, session_id)
+    result = engine.resume_game(db, game)
+    return result
+
+
 # ── Player actions (each costs 1 AP) ───────
 
 @router.post("/{session_id}/action/buy")

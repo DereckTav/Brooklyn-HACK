@@ -198,9 +198,10 @@ export const useGameStore = create<GameStore>()((set, get) => ({
     if (res.ok) {
       set({ selectedPropertyId: null });
       await get().refreshStatus();
+      get().addToast(`Property acquired: ${selectedPropertyId.replace(/_/g, " ")}`, "success");
     } else {
       const err = await res.json();
-      alert(err.detail || "Cannot buy this property");
+      get().addToast(err.detail || "Cannot buy this property", "danger");
     }
     set({ loading: false });
   },
@@ -336,7 +337,12 @@ export const useGameStore = create<GameStore>()((set, get) => ({
   },
 
   setTriviaOpen: (open) => set({ triviaOpen: open }),
-  setPauseOpen: (open) => set({ pauseOpen: open }),
+  setPauseOpen: async (open) => {
+    set({ pauseOpen: open });
+    const endpoint = open ? "pause" : "resume";
+    await fetch(`${API}/${SESSION}/${endpoint}`, { method: "POST" });
+    await get().refreshStatus();
+  },
 
   addToast: (message, variant = "info") => {
     const id = ++toastId;
