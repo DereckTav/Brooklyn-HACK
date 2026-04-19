@@ -229,7 +229,6 @@ export const useGameStore = create<GameStore>()((set, get) => ({
     });
 
     if (res.ok) {
-      set({ selectedPropertyId: null });
       await get().refreshStatus();
       get().addToast(`Property acquired: ${selectedPropertyId.replace(/_/g, " ")}`, "success");
     } else {

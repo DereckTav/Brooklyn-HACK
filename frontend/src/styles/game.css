@@ -461,16 +461,12 @@
   padding: 3px 6px;
   z-index: 15;
   pointer-events: none;
-  box-shadow: 
-    0 0 8px rgba(255, 215, 0, 0.4),
-    inset 0 0 2px rgba(255, 215, 0, 0.2);
   letter-spacing: 1px;
 }
 
 .tile--owned-rival .tile__level-readout {
   border-color: var(--color-orange);
   color: var(--color-orange);
-  box-shadow: 0 0 8px rgba(229, 107, 48, 0.4);
 }
 
 .tile--selected {
